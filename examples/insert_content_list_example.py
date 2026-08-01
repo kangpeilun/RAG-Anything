@@ -15,21 +15,25 @@ import argparse
 import asyncio
 import logging
 import logging.config
-from functools import partial
 from pathlib import Path
 
-# Add project root directory to Python path
+# Add project root directory to Python path before site-packages.
+# This ensures examples use the local checkout, not an installed raganything package.
 import sys
-
-sys.path.append(str(Path(__file__).parent.parent))
-
-from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
-from raganything import RAGAnything, RAGAnythingConfig
 
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=".env", override=False)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
+
+from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
+from raganything import RAGAnything, RAGAnythingConfig
+from raganything.model_config import (
+    create_llm_model_func,
+    create_vlm_model_func,
+    create_embedding_func,
+)
 
 
 def configure_logging():
@@ -176,16 +180,14 @@ def create_sample_content_list():
 
 
 async def demo_insert_content_list(
-    api_key: str,
-    base_url: str = None,
     working_dir: str = None,
 ):
     """
     Demonstrate content list insertion and querying with RAGAnything
 
+    Model configuration is read from .env (see LLM_*, VLM_*, EMBEDDING_* env vars).
+
     Args:
-        api_key: OpenAI API key
-        base_url: Optional base URL for API
         working_dir: Working directory for RAG storage
     """
     try:
@@ -198,85 +200,17 @@ async def demo_insert_content_list(
             display_content_stats=True,  # Show content statistics
         )
 
-        # Define LLM model function
-        def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
-            return openai_complete_if_cache(
-                "gpt-4o-mini",
-                prompt,
-                system_prompt=system_prompt,
-                history_messages=history_messages,
-                api_key=api_key,
-                base_url=base_url,
-                **kwargs,
-            )
+        # 使用 model_config 工厂函数自动从 .env 读取配置
+        # 每类模型可独立配置: LLM_*, VLM_*, EMBEDDING_* 环境变量
+        llm_model_func = create_llm_model_func()
+        vision_model_func = create_vlm_model_func()
+        embedding_func = create_embedding_func()
 
-        # Define vision model function for image processing
-        def vision_model_func(
-            prompt,
-            system_prompt=None,
-            history_messages=[],
-            image_data=None,
-            messages=None,
-            **kwargs,
-        ):
-            # If pre-built messages are provided (VLM enhanced query path), use them directly
-            if messages:
-                return openai_complete_if_cache(
-                    "gpt-4o",
-                    "",
-                    system_prompt=None,
-                    history_messages=[],
-                    messages=messages,
-                    api_key=api_key,
-                    base_url=base_url,
-                    **kwargs,
-                )
-            elif image_data:
-                return openai_complete_if_cache(
-                    "gpt-4o",
-                    "",
-                    system_prompt=None,
-                    history_messages=[],
-                    messages=[
-                        {"role": "system", "content": system_prompt}
-                        if system_prompt
-                        else None,
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{image_data}"
-                                    },
-                                },
-                            ],
-                        }
-                        if image_data
-                        else {"role": "user", "content": prompt},
-                    ],
-                    api_key=api_key,
-                    base_url=base_url,
-                    **kwargs,
-                )
-            else:
-                return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
-
-        # Define embedding function - using environment variables for configuration
-        embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
-        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
-
-        embedding_func = EmbeddingFunc(
-            embedding_dim=embedding_dim,
-            max_token_size=8192,
-            func=partial(
-                openai_embed.func,
-                model=embedding_model,
-                api_key=api_key,
-                base_url=base_url,
-            ),
-        )
+        # 如需自定义覆盖，也可手动传入 OpenAIModelConfig:
+        # from raganything.model_config import OpenAIModelConfig
+        # llm_model_func = create_llm_model_func(
+        #     OpenAIModelConfig(api_key="xxx", base_url="xxx", model="deepseek-chat")
+        # )
 
         # Initialize RAGAnything
         rag = RAGAnything(
@@ -399,31 +333,13 @@ def main():
     parser.add_argument(
         "--working_dir", "-w", default="./rag_storage", help="Working directory path"
     )
-    parser.add_argument(
-        "--api-key",
-        default=os.getenv("LLM_BINDING_API_KEY"),
-        help="OpenAI API key (defaults to LLM_BINDING_API_KEY env var)",
-    )
-    parser.add_argument(
-        "--base-url",
-        default=os.getenv("LLM_BINDING_HOST"),
-        help="Optional base URL for API",
-    )
 
     args = parser.parse_args()
-
-    # Check if API key is provided
-    if not args.api_key:
-        logger.error("Error: OpenAI API key is required")
-        logger.error("Set api key environment variable or use --api-key option")
-        return
 
     # Run the demo
     asyncio.run(
         demo_insert_content_list(
-            args.api_key,
-            args.base_url,
-            args.working_dir,
+            working_dir=args.working_dir,
         )
     )
 

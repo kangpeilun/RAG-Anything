@@ -1,16 +1,27 @@
 """
 Example of directly using modal processors
 
-This example demonstrates how to use RAG-Anything's modal processors directly without going through MinerU.
+This example demonstrates how to use RAG-Anything's modal processors directly
+without going through MinerU.
+
+Model configuration is read from .env (see LLM_*, VLM_*, EMBEDDING_* env vars).
 """
 
 import asyncio
 import argparse
-from functools import partial
-from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-from lightrag.utils import EmbeddingFunc
-from lightrag.kg.shared_storage import initialize_pipeline_status
+import os
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Use the local checkout and its root .env when this file is run directly.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
+
 from lightrag import LightRAG
+from lightrag.kg.shared_storage import initialize_pipeline_status
+from raganything import create_llm_model_func, create_vlm_model_func, create_embedding_func
 from raganything.modalprocessors import (
     ImageModalProcessor,
     TableModalProcessor,
@@ -18,68 +29,6 @@ from raganything.modalprocessors import (
 )
 
 WORKING_DIR = "./rag_storage"
-
-
-def get_llm_model_func(api_key: str, base_url: str = None):
-    return (
-        lambda prompt,
-        system_prompt=None,
-        history_messages=[],
-        **kwargs: openai_complete_if_cache(
-            "gpt-4o-mini",
-            prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages,
-            api_key=api_key,
-            base_url=base_url,
-            **kwargs,
-        )
-    )
-
-
-def get_vision_model_func(api_key: str, base_url: str = None):
-    return (
-        lambda prompt,
-        system_prompt=None,
-        history_messages=[],
-        image_data=None,
-        **kwargs: openai_complete_if_cache(
-            "gpt-4o",
-            "",
-            system_prompt=None,
-            history_messages=[],
-            messages=[
-                {"role": "system", "content": system_prompt} if system_prompt else None,
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_data}"
-                            },
-                        },
-                    ],
-                }
-                if image_data
-                else {"role": "user", "content": prompt},
-            ],
-            api_key=api_key,
-            base_url=base_url,
-            **kwargs,
-        )
-        if image_data
-        else openai_complete_if_cache(
-            "gpt-4o-mini",
-            prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages,
-            api_key=api_key,
-            base_url=base_url,
-            **kwargs,
-        )
-    )
 
 
 async def process_image_example(lightrag: LightRAG, vision_model_func):
@@ -164,37 +113,15 @@ async def process_equation_example(lightrag: LightRAG, llm_model_func):
     print(f"Entity Info: {entity_info}")
 
 
-async def initialize_rag(api_key: str, base_url: str = None):
-    # Use environment variables for embedding configuration
-    import os
-
-    embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
-    embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+async def initialize_rag():
+    """Initialize LightRAG with model functions from .env."""
+    llm_model_func = create_llm_model_func()
+    embedding_func = create_embedding_func()
 
     rag = LightRAG(
         working_dir=WORKING_DIR,
-        embedding_func=EmbeddingFunc(
-            embedding_dim=embedding_dim,
-            max_token_size=8192,
-            func=partial(
-                openai_embed.func,
-                model=embedding_model,
-                api_key=api_key,
-                base_url=base_url,
-            ),
-        ),
-        llm_model_func=lambda prompt,
-        system_prompt=None,
-        history_messages=[],
-        **kwargs: openai_complete_if_cache(
-            "gpt-4o-mini",
-            prompt,
-            system_prompt=system_prompt,
-            history_messages=history_messages,
-            api_key=api_key,
-            base_url=base_url,
-            **kwargs,
-        ),
+        embedding_func=embedding_func,
+        llm_model_func=llm_model_func,
     )
 
     await rag.initialize_storages()
@@ -206,25 +133,23 @@ async def initialize_rag(api_key: str, base_url: str = None):
 def main():
     """Main function to run the example"""
     parser = argparse.ArgumentParser(description="Modal Processors Example")
-    parser.add_argument("--api-key", required=True, help="OpenAI API key")
-    parser.add_argument("--base-url", help="Optional base URL for API")
     parser.add_argument(
         "--working-dir", "-w", default=WORKING_DIR, help="Working directory path"
     )
-
     args = parser.parse_args()
 
     # Run examples
-    asyncio.run(main_async(args.api_key, args.base_url))
+    asyncio.run(main_async())
 
 
-async def main_async(api_key: str, base_url: str = None):
+async def main_async():
+    # 使用 model_config 工厂函数自动从 .env 读取配置
+    # 每类模型可独立配置: LLM_*, VLM_*, EMBEDDING_* 环境变量
+    llm_model_func = create_llm_model_func()
+    vision_model_func = create_vlm_model_func()
+
     # Initialize LightRAG
-    lightrag = await initialize_rag(api_key, base_url)
-
-    # Get model functions
-    llm_model_func = get_llm_model_func(api_key, base_url)
-    vision_model_func = get_vision_model_func(api_key, base_url)
+    lightrag = await initialize_rag()
 
     # Run examples
     await process_image_example(lightrag, vision_model_func)

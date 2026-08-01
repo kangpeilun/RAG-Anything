@@ -860,7 +860,7 @@ class ProcessorMixin:
                 knowledge_graph_inst=self.lightrag.chunk_entity_relation_graph,
                 entity_vdb=self.lightrag.entities_vdb,
                 relationships_vdb=self.lightrag.relationships_vdb,
-                global_config=self.lightrag.__dict__,
+                global_config=self.lightrag._build_global_config(),
                 full_entities_storage=self.lightrag.full_entities,
                 full_relations_storage=self.lightrag.full_relations,
                 doc_id=doc_id,
@@ -1382,7 +1382,7 @@ class ProcessorMixin:
         # Directly use LightRAG's extract_entities
         chunk_results = await extract_entities(
             chunks=lightrag_chunks,
-            global_config=self.lightrag.__dict__,
+            global_config=self.lightrag._build_global_config(),
             pipeline_status=pipeline_status,
             pipeline_status_lock=pipeline_status_lock,
             llm_response_cache=self.lightrag.llm_response_cache,
@@ -1479,7 +1479,7 @@ class ProcessorMixin:
             knowledge_graph_inst=self.lightrag.chunk_entity_relation_graph,
             entity_vdb=self.lightrag.entities_vdb,
             relationships_vdb=self.lightrag.relationships_vdb,
-            global_config=self.lightrag.__dict__,
+            global_config=self.lightrag._build_global_config(),
             full_entities_storage=self.lightrag.full_entities,
             full_relations_storage=self.lightrag.full_relations,
             doc_id=doc_id,

@@ -394,6 +394,13 @@ class QueryMixin:
         self.logger.debug("Retrieved raw prompt from LightRAG")
 
         # 2. Extract and process image paths
+        if raw_prompt is None:
+            self.logger.info("No retrieval prompt returned, falling back to normal query")
+            query_param = QueryParam(mode=mode, **kwargs)
+            return await self.lightrag.aquery(
+                query, param=query_param, system_prompt=system_prompt
+            )
+
         enhanced_prompt, images_found = await self._process_image_paths_for_vlm(
             raw_prompt, extra_safe_dirs=extra_safe_dirs
         )

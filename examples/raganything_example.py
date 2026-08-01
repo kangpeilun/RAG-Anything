@@ -14,21 +14,25 @@ import argparse
 import asyncio
 import logging
 import logging.config
-from functools import partial
 from pathlib import Path
 
-# Add project root directory to Python path
+# Add project root directory to Python path before site-packages.
+# This ensures examples use the local checkout, not an installed raganything package.
 import sys
-
-sys.path.append(str(Path(__file__).parent.parent))
-
-from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
-from raganything import RAGAnything, RAGAnythingConfig
 
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=".env", override=False)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
+
+from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
+from raganything import RAGAnything, RAGAnythingConfig
+from raganything.model_config import (
+    create_llm_model_func,
+    create_vlm_model_func,
+    create_embedding_func,
+)
 
 
 def configure_logging():
@@ -90,20 +94,19 @@ def configure_logging():
 async def process_with_rag(
     file_path: str,
     output_dir: str,
-    api_key: str,
-    base_url: str = None,
     working_dir: str = None,
     parser: str = None,
 ):
     """
     Process document with RAGAnything
 
+    Model configuration is read from .env (see LLM_*, VLM_*, EMBEDDING_* env vars).
+
     Args:
         file_path: Path to the document
         output_dir: Output directory for RAG results
-        api_key: OpenAI API key
-        base_url: Optional base URL for API
         working_dir: Working directory for RAG storage
+        parser: Parser selection (mineru, docling, paddleocr)
     """
     try:
         # Create RAGAnything configuration
@@ -116,90 +119,17 @@ async def process_with_rag(
             enable_equation_processing=True,
         )
 
-        # Define LLM model function
-        llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
-        vision_model = os.getenv("VISION_MODEL", "gpt-4o")
+        # 使用 model_config 工厂函数自动从 .env 读取配置
+        # 每类模型可独立配置: LLM_*, VLM_*, EMBEDDING_* 环境变量
+        llm_model_func = create_llm_model_func()
+        vision_model_func = create_vlm_model_func()
+        embedding_func = create_embedding_func()
 
-        def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
-            return openai_complete_if_cache(
-                llm_model,
-                prompt,
-                system_prompt=system_prompt,
-                history_messages=history_messages,
-                api_key=api_key,
-                base_url=base_url,
-                **kwargs,
-            )
-
-        # Define vision model function for image processing
-        def vision_model_func(
-            prompt,
-            system_prompt=None,
-            history_messages=[],
-            image_data=None,
-            messages=None,
-            **kwargs,
-        ):
-            # If messages format is provided (for multimodal VLM enhanced query), use it directly
-            if messages:
-                return openai_complete_if_cache(
-                    vision_model,
-                    "",
-                    system_prompt=None,
-                    history_messages=[],
-                    messages=messages,
-                    api_key=api_key,
-                    base_url=base_url,
-                    **kwargs,
-                )
-            # Traditional single image format
-            elif image_data:
-                return openai_complete_if_cache(
-                    vision_model,
-                    "",
-                    system_prompt=None,
-                    history_messages=[],
-                    messages=[
-                        {"role": "system", "content": system_prompt}
-                        if system_prompt
-                        else None,
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{image_data}"
-                                    },
-                                },
-                            ],
-                        }
-                        if image_data
-                        else {"role": "user", "content": prompt},
-                    ],
-                    api_key=api_key,
-                    base_url=base_url,
-                    **kwargs,
-                )
-            # Pure text format
-            else:
-                return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
-
-        # Define embedding function - using environment variables for configuration
-        embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
-        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
-
-        embedding_func = EmbeddingFunc(
-            embedding_dim=embedding_dim,
-            max_token_size=8192,
-            func=partial(
-                openai_embed.func,
-                model=embedding_model,
-                api_key=api_key,
-                base_url=base_url,
-            ),
-        )
+        # 如需自定义覆盖，也可手动传入 OpenAIModelConfig:
+        # from raganything.model_config import OpenAIModelConfig
+        # llm_model_func = create_llm_model_func(
+        #     OpenAIModelConfig(api_key="xxx", base_url="xxx", model="deepseek-chat")
+        # )
 
         # Initialize RAGAnything with new dataclass structure
         rag = RAGAnything(
@@ -207,6 +137,9 @@ async def process_with_rag(
             llm_model_func=llm_model_func,
             vision_model_func=vision_model_func,
             embedding_func=embedding_func,
+            lightrag_kwargs={
+                "llm_model_max_async": 2,
+            },
         )
 
         # Process document
@@ -273,22 +206,12 @@ async def process_with_rag(
 def main():
     """Main function to run the example"""
     parser = argparse.ArgumentParser(description="MinerU RAG Example")
-    parser.add_argument("file_path", help="Path to the document to process")
+    parser.add_argument("--file_path", default="../assets/MARSNet.pdf", help="Path to the document to process")
     parser.add_argument(
         "--working_dir", "-w", default="./rag_storage", help="Working directory path"
     )
     parser.add_argument(
         "--output", "-o", default="./output", help="Output directory path"
-    )
-    parser.add_argument(
-        "--api-key",
-        default=os.getenv("LLM_BINDING_API_KEY"),
-        help="OpenAI API key (defaults to LLM_BINDING_API_KEY env var)",
-    )
-    parser.add_argument(
-        "--base-url",
-        default=os.getenv("LLM_BINDING_HOST"),
-        help="Optional base URL for API",
     )
     parser.add_argument(
         "--parser",
@@ -304,12 +227,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Check if API key is provided
-    if not args.api_key:
-        logger.error("Error: OpenAI API key is required")
-        logger.error("Set api key environment variable or use --api-key option")
-        return
-
     # Create output directory if specified
     if args.output:
         os.makedirs(args.output, exist_ok=True)
@@ -317,12 +234,10 @@ def main():
     # Process with RAG
     asyncio.run(
         process_with_rag(
-            args.file_path,
-            args.output,
-            args.api_key,
-            args.base_url,
-            args.working_dir,
-            args.parser,
+            file_path=args.file_path,
+            output_dir=args.output,
+            working_dir=args.working_dir,
+            parser=args.parser,
         )
     )
 

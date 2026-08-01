@@ -15,15 +15,24 @@ Requirements:
   Note: MiniMax does not provide an embedding model, so a separate embedding
   service is required.
 
-Environment Setup:
+Environment Setup (Option A — MiniMax-specific):
 Create a .env file with:
 MINIMAX_API_KEY=your-minimax-api-key
-
-# For embeddings, use any OpenAI-compatible service, e.g.:
 EMBEDDING_BINDING_HOST=https://api.openai.com/v1
 EMBEDDING_BINDING_API_KEY=your-openai-api-key
 EMBEDDING_MODEL=text-embedding-3-small
 EMBEDDING_DIM=1536
+
+Environment Setup (Option B — generic model_config):
+# Use the same OpenAI-compatible .env variables (see .env.example):
+# LLM_API_KEY=sk-xxx
+# LLM_BASE_URL=https://api.minimax.io/v1
+# LLM_MODEL=MiniMax-M3
+# EMBEDDING_API_KEY=sk-xxx
+# EMBEDDING_BASE_URL=https://api.openai.com/v1
+# EMBEDDING_MODEL=text-embedding-3-small
+# EMBEDDING_DIM=1536
+# Then use create_llm_model_func() and create_embedding_func() from raganything.model_config.
 
 Quick start:
     export MINIMAX_API_KEY=your-api-key
@@ -34,20 +43,29 @@ API Reference:
 """
 
 import os
+import sys
 import uuid
 import asyncio
 import inspect
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 
+# Run against the local checkout and always load the project-root .env.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
+
 # RAG-Anything imports
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.model_config import (
+    OpenAIModelConfig,
+    create_llm_model_func as create_llm_model_func,
+    create_embedding_func as create_embedding_func,
+)
 from lightrag.utils import EmbeddingFunc
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-
-# Load environment variables
-load_dotenv()
 
 # MiniMax configuration
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1")

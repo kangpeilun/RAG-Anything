@@ -19,10 +19,10 @@ from pathlib import Path
 import tempfile
 import time
 
-# Add project root directory to Python path
+# Add project root directory to Python path before site-packages.
 import sys
 
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.batch_parser import BatchParser

@@ -1,6 +1,14 @@
 from .raganything import RAGAnything as RAGAnything
 from .config import RAGAnythingConfig as RAGAnythingConfig
 
+# Model configuration helpers (env-var-driven factory functions)
+from .model_config import (
+    OpenAIModelConfig as OpenAIModelConfig,
+    create_llm_model_func as create_llm_model_func,
+    create_vlm_model_func as create_vlm_model_func,
+    create_embedding_func as create_embedding_func,
+)
+
 # Core parser class is always available.
 from .parser import Parser as Parser
 
@@ -65,6 +73,10 @@ __all__ = [
     "RAGAnything",
     "RAGAnythingConfig",
     "Parser",
+    "OpenAIModelConfig",
+    "create_llm_model_func",
+    "create_vlm_model_func",
+    "create_embedding_func",
 ]
 
 # Feature-gated exports: only add names that are actually available in this build.

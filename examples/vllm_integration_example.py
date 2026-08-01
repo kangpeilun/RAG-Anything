@@ -33,14 +33,18 @@ EMBEDDING_BINDING_API_KEY=token-abc123
 """
 
 import os
+import sys
 import uuid
 import asyncio
+from pathlib import Path
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-# Load environment variables
-load_dotenv()
+# Run against the local checkout and always load the project-root .env.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=False)
 
 # RAG-Anything imports
 from raganything import RAGAnything, RAGAnythingConfig

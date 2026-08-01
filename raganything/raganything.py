@@ -35,6 +35,11 @@ from raganything.batch import BatchMixin
 from raganything.utils import get_processor_supports
 from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
 from raganything.callbacks import CallbackManager
+from raganything.model_config import (
+    create_llm_model_func,
+    create_vlm_model_func,
+    create_embedding_func,
+)
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -107,6 +112,14 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
     def __post_init__(self):
         """Post-initialization setup following LightRAG pattern"""
+        # Load .env file if present (before any env-var lookups)
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(dotenv_path=".env", override=False)
+        except ImportError:
+            pass
+
         # Initialize configuration if not provided
         if self.config is None:
             self.config = RAGAnythingConfig()

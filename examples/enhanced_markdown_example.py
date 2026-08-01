@@ -18,10 +18,10 @@ import logging
 from pathlib import Path
 import tempfile
 
-# Add project root directory to Python path
+# Add project root directory to Python path before site-packages.
 import sys
 
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from raganything.enhanced_markdown import EnhancedMarkdownConverter, MarkdownConfig
 
